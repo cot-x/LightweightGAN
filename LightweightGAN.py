@@ -4,6 +4,13 @@
 # In[ ]:
 
 
+#from comet_ml import Experiment
+#experiment = Experiment()
+
+
+# In[ ]:
+
+
 import os
 import numpy as np
 import torch
@@ -579,6 +586,7 @@ class Solver:
 
         for key in hyper_params.keys():
             print(f'{key}: {hyper_params[key]}')
+        #experiment.log_parameters(hyper_params)
         
         while self.args.num_train > self.epoch:
             self.epoch += 1
@@ -594,6 +602,7 @@ class Solver:
                 
                 epoch_loss_D += loss['D/loss']
                 epoch_loss_G += loss['G/loss']
+                #experiment.log_metrics(loss)
                 
             #self.scheduler_G.step()
             #self.scheduler_D.step()
@@ -638,6 +647,7 @@ def main(args):
     
     #solver.showImages()
     solver.train(not args.noresume)
+    #experiment.end()
 
 
 # In[ ]:

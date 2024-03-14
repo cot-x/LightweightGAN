@@ -455,8 +455,8 @@ class Solver:
         
         mse_loss = nn.MSELoss()
         random_data = torch.randn(real_img.size(0), self.feed_dim, 2, 2).to(self.device)
-        noise = torch.Tensor(np.random.normal(0, self.args.lambda_zcr_noise, (real_img.size(0), self.feed_dim, 2, 2))).to(self.device)
-        z = random_data + noise
+        #noise = torch.Tensor(np.random.normal(0, self.args.lambda_zcr_noise, (real_img.size(0), self.feed_dim, 2, 2))).to(self.device)
+        #z = random_data + noise
         
         # ================================================================================ #
         #                             Train the discriminator                              #
@@ -471,41 +471,42 @@ class Solver:
         fake_img, fake_128 = self.netG(random_data)
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
         
-        fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-        fake_128_loss = torch.sum((fake_128_score - a) ** 2)
-        #p = random.uniform(0, 1)
-        #if 1 - self.pseudo_aug < p:
-        #    fake_src_loss = torch.sum((fake_src_score - b) ** 2) # Pseudo: fake is real.
-        #    fake_128_loss = torch.sum((fake_128_score - b) ** 2) # Pseudo: fake is real.
-        #else:
-        #    fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-        #    fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        #fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+        #fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        p = random.uniform(0, 1)
+        if 1 - self.pseudo_aug < p:
+            fake_src_loss = torch.sum((fake_src_score - b) ** 2) # Pseudo: fake is real.
+            fake_128_loss = torch.sum((fake_128_score - b) ** 2) # Pseudo: fake is real.
+        else:
+            fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+            fake_128_loss = torch.sum((fake_128_score - a) ** 2)
         
-        ## Update Probability Augmentation.
-        #lz = (torch.sign(torch.logit(real_src_score)).mean()
-        #      - torch.sign(torch.logit(fake_src_score)).mean()) / 2
-        #if lz > self.args.aug_threshold:
-        #    self.pseudo_aug += self.args.aug_increment
-        #else:
-        #    self.pseudo_aug -= self.args.aug_increment
-        #self.pseudo_aug = min(1, max(0, self.pseudo_aug))
+        # Update Probability Augmentation.
+        lz = (torch.sign(torch.logit(real_src_score)).mean()
+              - torch.sign(torch.logit(fake_src_score)).mean()) / 2
+        if lz > self.args.aug_threshold:
+            self.pseudo_aug += self.args.aug_increment
+        else:
+            self.pseudo_aug -= self.args.aug_increment
+        self.pseudo_aug = min(1, max(0, self.pseudo_aug))
         
-        bcr_real = mse_loss(self.netD(real_img, is_real=True)[0], real_src_score)
-        fake_img_aug = Util.augment(fake_img)
-        fake_128_aug = Util.augment(fake_128)
-        fake_src_score_aug, fake_128_score_aug = self.netD((fake_img_aug, fake_128_aug))
-        bcr_fake = mse_loss(fake_src_score_aug, fake_src_score) + mse_loss(fake_128_score_aug, fake_128_score)
+        #bcr_real = mse_loss(self.netD(real_img, is_real=True)[0], real_src_score)
+        #fake_img_aug = Util.augment(fake_img)
+        #fake_128_aug = Util.augment(fake_128)
+        #fake_src_score_aug, fake_128_score_aug = self.netD((fake_img_aug, fake_128_aug))
+        #bcr_fake = mse_loss(fake_src_score_aug, fake_src_score) + mse_loss(fake_128_score_aug, fake_128_score)
         
-        z_img, z_128 = self.netG(z)
-        z_score, z_128_score = self.netD((z_img, z_128))
-        zcr_loss = mse_loss(fake_src_score, z_score) + mse_loss(fake_128_score, z_128_score)
+        #z_img, z_128 = self.netG(z)
+        #z_score, z_128_score = self.netD((z_img, z_128))
+        #zcr_loss = mse_loss(fake_src_score, z_score) + mse_loss(fake_128_score, z_128_score)
         
-        #_fake_img = Variable(fake_img.data)
-        #_random_data = Variable(random_data.data)
+        _fake_img = Variable(fake_img.data)
+        _random_data = Variable(random_data.data)
         
         # Backward and optimize.
         d_loss = (0.5 * (real_src_loss + fake_src_loss + fake_128_loss) / self.args.batch_size + d_loss_recon
-                  + self.args.lambda_bcr_real * bcr_real + self.args.lambda_bcr_fake * bcr_fake + self.args.lambda_zcr_dis * zcr_loss)
+                  #+ self.args.lambda_bcr_real * bcr_real + self.args.lambda_bcr_fake * bcr_fake + self.args.lambda_zcr_dis * zcr_loss
+                 )
         self.optimizer_D.zero_grad()
         d_loss.backward()
         self.optimizer_D.step()
@@ -515,9 +516,9 @@ class Solver:
         loss['D/loss'] = d_loss.item()
         loss['D/fake_128_loss'] = fake_128_loss.item()
         loss['D/loss_recon'] = d_loss_recon.item()
-        #loss['Augment/prob'] = self.pseudo_aug
-        loss['D/bcr_loss'] = (bcr_real + bcr_fake).item()
-        loss['D/zcr_loss'] = zcr_loss.item()
+        loss['Augment/prob'] = self.pseudo_aug
+        #loss['D/bcr_loss'] = (bcr_real + bcr_fake).item()
+        #loss['D/zcr_loss'] = zcr_loss.item()
         
         # ================================================================================ #
         #                               Train the generator                                #
@@ -531,18 +532,19 @@ class Solver:
         fake_src_loss = torch.sum((fake_src_score - c) ** 2)
         fake_128_loss = torch.sum((fake_128_score - c) ** 2)
         
-        z_img, z_128 = self.netG(z)
-        zcr_loss = - mse_loss(fake_img, z_img) - mse_loss(fake_128, z_128)
+        #z_img, z_128 = self.netG(z)
+        #zcr_loss = - mse_loss(fake_img, z_img) - mse_loss(fake_128, z_128)
         
-        ## Mode Seeking Loss
-        #lz = torch.mean(torch.abs(fake_img - _fake_img)) / torch.mean(torch.abs(random_data - _random_data))
-        #eps = 1 * 1e-5
-        #ms_loss = 1 / (lz + eps) * lambda_ms
+        # Mode Seeking Loss
+        lz = torch.mean(torch.abs(fake_img - _fake_img)) / torch.mean(torch.abs(random_data - _random_data))
+        eps = 1 * 1e-5
+        ms_loss = 1 / (lz + eps) * lambda_ms
         
         # Backward and optimize.
         g_loss = (0.5 * (fake_src_loss + fake_128_loss) / self.args.batch_size
-                  + self.args.lambda_zcr_gen * zcr_loss)
-                  #+ ms_loss)
+                  #+ self.args.lambda_zcr_gen * zcr_loss
+                  + ms_loss
+                 )
         self.optimizer_G.zero_grad()
         g_loss.backward()
         self.optimizer_G.step()
@@ -550,8 +552,8 @@ class Solver:
         # Logging.
         loss['G/loss'] = g_loss.item()
         loss['G/fake_128_loss'] = fake_128_loss.item()
-        #loss['G/ms_loss'] = ms_loss.item()
-        loss['G/zcr_loss'] = zcr_loss.item()
+        loss['G/ms_loss'] = ms_loss.item()
+        #loss['G/zcr_loss'] = zcr_loss.item()
         
         # Save
         if iters == max_iters:
@@ -576,13 +578,13 @@ class Solver:
         hyper_params["Mul Discriminator's LR"] = self.args.mul_lr_dis
         hyper_params['Batch Size'] = self.args.batch_size
         hyper_params['Num Train'] = self.args.num_train
-        #hyper_params['Probability Aug-Threshold'] = self.args.aug_threshold
-        #hyper_params['Probability Aug-Increment'] = self.args.aug_increment
-        hyper_params['bCR lambda_real'] = args.lambda_bcr_real
-        hyper_params['bCR lambda_fake'] = args.lambda_bcr_fake
-        hyper_params['zCR lambda_gen'] = args.lambda_zcr_gen
-        hyper_params['zCR lambda_dis'] = args.lambda_zcr_dis
-        hyper_params['zCR lambda_noise'] = args.lambda_zcr_noise
+        hyper_params['Probability Aug-Threshold'] = self.args.aug_threshold
+        hyper_params['Probability Aug-Increment'] = self.args.aug_increment
+        #hyper_params['bCR lambda_real'] = args.lambda_bcr_real
+        #hyper_params['bCR lambda_fake'] = args.lambda_bcr_fake
+        #hyper_params['zCR lambda_gen'] = args.lambda_zcr_gen
+        #hyper_params['zCR lambda_dis'] = args.lambda_zcr_dis
+        #hyper_params['zCR lambda_noise'] = args.lambda_zcr_noise
 
         for key in hyper_params.keys():
             print(f'{key}: {hyper_params[key]}')
@@ -661,15 +663,15 @@ if __name__ == '__main__':
     parser.add_argument('--image_size', type=int, default=256)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--mul_lr_dis', type=float, default=4)
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--num_train', type=int, default=100)
-    #parser.add_argument('--aug_threshold', type=float, default=0.6)
-    #parser.add_argument('--aug_increment', type=float, default=0.01)
-    parser.add_argument('--lambda_bcr_real', type=float, default=10)
-    parser.add_argument('--lambda_bcr_fake', type=float, default=10)
-    parser.add_argument('--lambda_zcr_noise', type=float, default=0.07)
-    parser.add_argument('--lambda_zcr_dis', type=float, default=20)
-    parser.add_argument('--lambda_zcr_gen', type=float, default=0.5)
+    parser.add_argument('--aug_threshold', type=float, default=0.6)
+    parser.add_argument('--aug_increment', type=float, default=0.01)
+    #parser.add_argument('--lambda_bcr_real', type=float, default=10)
+    #parser.add_argument('--lambda_bcr_fake', type=float, default=10)
+    #parser.add_argument('--lambda_zcr_noise', type=float, default=0.07)
+    #parser.add_argument('--lambda_zcr_dis', type=float, default=20)
+    #parser.add_argument('--lambda_zcr_gen', type=float, default=0.5)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--generate', type=int, default=0)
     parser.add_argument('--noresume', action='store_true')

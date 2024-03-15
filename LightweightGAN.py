@@ -535,15 +535,15 @@ class Solver:
         #z_img, z_128 = self.netG(z)
         #zcr_loss = - mse_loss(fake_img, z_img) - mse_loss(fake_128, z_128)
         
-        # Mode Seeking Loss
-        lz = torch.mean(torch.abs(fake_img - _fake_img)) / torch.mean(torch.abs(random_data - _random_data))
-        eps = 1 * 1e-5
-        ms_loss = 1 / (lz + eps) * lambda_ms
+        ## Mode Seeking Loss
+        #lz = torch.mean(torch.abs(fake_img - _fake_img)) / torch.mean(torch.abs(random_data - _random_data))
+        #eps = 1 * 1e-5
+        #ms_loss = 1 / (lz + eps) * lambda_ms
         
         # Backward and optimize.
         g_loss = (0.5 * (fake_src_loss + fake_128_loss) / self.args.batch_size
                   #+ self.args.lambda_zcr_gen * zcr_loss
-                  + ms_loss
+                  #+ ms_loss
                  )
         self.optimizer_G.zero_grad()
         g_loss.backward()
@@ -552,7 +552,7 @@ class Solver:
         # Logging.
         loss['G/loss'] = g_loss.item()
         loss['G/fake_128_loss'] = fake_128_loss.item()
-        loss['G/ms_loss'] = ms_loss.item()
+        #loss['G/ms_loss'] = ms_loss.item()
         #loss['G/zcr_loss'] = zcr_loss.item()
         
         # Save

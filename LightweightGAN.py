@@ -331,20 +331,20 @@ class Util:
         device = images.device
         return torch.cat([transform(img).unsqueeze(0) for img in images.cpu()], 0).to(device)
 
-#    @staticmethod
-#    def augment(images, p):
-#        device = images.device
-#        size = images.size(-1)
-#        images = [img for img in images.cpu()]
-#        images = [transforms.ToPILImage()(img) for img in images]
-#        if random.uniform(0, 1) <= p:
-#            images = [transforms.ColorJitter(brightness=0, contrast=0.5, saturation=0.5)(img) for img in images]
-#        if random.uniform(0, 1) <= p:
-#            images = [transforms.RandomRotation(degrees=30)(img) for img in images]
-#        images = [transforms.ToTensor()(img) for img in images]
-#        images = [RandomErasing(p=p)(img) for img in images]
-#        images = torch.cat([img.unsqueeze(0) for img in images], 0).to(device)
-#        return images
+    @staticmethod
+    def augment_p(images, p):
+        device = images.device
+        size = images.size(-1)
+        images = [img for img in images.cpu()]
+        images = [transforms.ToPILImage()(img) for img in images]
+        if random.uniform(0, 1) <= p:
+            images = [transforms.ColorJitter(brightness=0, contrast=0.5, saturation=0.5)(img) for img in images]
+        if random.uniform(0, 1) <= p:
+            images = [transforms.RandomRotation(degrees=30)(img) for img in images]
+        images = [transforms.ToTensor()(img) for img in images]
+        images = [RandomErasing(p=p)(img) for img in images]
+        images = torch.cat([img.unsqueeze(0) for img in images], 0).to(device)
+        return images
     
     @staticmethod
     def randomCrop(image, size):
@@ -463,16 +463,21 @@ class Solver:
         # ================================================================================ #
         
         # Compute loss with real images.
-        real_img_aug = Util.augment(real_img)
-        real_src_score, d_loss_recon = self.netD(real_img_aug, is_real=True)
+        #real_img_aug = Util.augment(real_img) # bCR
+        #real_img_aug = Util.augment_p(real_img, self.pseudo_aug) # ADA
+        real_src_score, d_loss_recon = self.netD(real_img, is_real=True)
         real_src_loss = torch.sum((real_src_score - b) ** 2)
         
         # Compute loss with fake images.
         fake_img, fake_128 = self.netG(random_data)
+        #fake_img_aug = Util.augment_p(fake_img, self.pseudo_aug) # ADA
+        #fake_128_aug = Util.augment_p(fake_128, self.pseudo_aug) # ADA
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
         
-        #fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-        #fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+        fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        
+        # APA
         p = random.uniform(0, 1)
         if 1 - self.pseudo_aug < p:
             fake_src_loss = torch.sum((fake_src_score - b) ** 2) # Pseudo: fake is real.
@@ -480,7 +485,7 @@ class Solver:
         else:
             fake_src_loss = torch.sum((fake_src_score - a) ** 2)
             fake_128_loss = torch.sum((fake_128_score - a) ** 2)
-        
+
         # Update Probability Augmentation.
         lz = (torch.sign(torch.logit(real_src_score)).mean()
               - torch.sign(torch.logit(fake_src_score)).mean()) / 2
@@ -489,19 +494,22 @@ class Solver:
         else:
             self.pseudo_aug -= self.args.aug_increment
         self.pseudo_aug = min(1, max(0, self.pseudo_aug))
-        
+
+        # bCR
         #bcr_real = mse_loss(self.netD(real_img, is_real=True)[0], real_src_score)
         #fake_img_aug = Util.augment(fake_img)
         #fake_128_aug = Util.augment(fake_128)
         #fake_src_score_aug, fake_128_score_aug = self.netD((fake_img_aug, fake_128_aug))
         #bcr_fake = mse_loss(fake_src_score_aug, fake_src_score) + mse_loss(fake_128_score_aug, fake_128_score)
-        
+
+        # zCR
         #z_img, z_128 = self.netG(z)
         #z_score, z_128_score = self.netD((z_img, z_128))
         #zcr_loss = mse_loss(fake_src_score, z_score) + mse_loss(fake_128_score, z_128_score)
-        
-        _fake_img = Variable(fake_img.data)
-        _random_data = Variable(random_data.data)
+
+        # for Mode-Seeking
+        #_fake_img = Variable(fake_img.data)
+        #_random_data = Variable(random_data.data)
         
         # Backward and optimize.
         d_loss = (0.5 * (real_src_loss + fake_src_loss + fake_128_loss) / self.args.batch_size + d_loss_recon
@@ -528,10 +536,13 @@ class Solver:
         
         # Compute loss with fake images.
         fake_img, fake_128 = self.netG(random_data)
+        #fake_img_aug = Util.augment_p(fake_img, self.pseudo_aug) # ADA
+        #fake_128_aug = Util.augment_p(fake_128, self.pseudo_aug) # ADA
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
         fake_src_loss = torch.sum((fake_src_score - c) ** 2)
         fake_128_loss = torch.sum((fake_128_score - c) ** 2)
-        
+
+        # zCR
         #z_img, z_128 = self.netG(z)
         #zcr_loss = - mse_loss(fake_img, z_img) - mse_loss(fake_128, z_128)
         

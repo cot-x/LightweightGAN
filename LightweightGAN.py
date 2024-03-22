@@ -264,8 +264,8 @@ class Discriminator(nn.Module):
         
         out = self.conv_patch(x)
         
-        # Not use PatchGAN
-        out = F.adaptive_avg_pool2d(out, 1).view(out.shape[0], -1) # Global Average Pooling
+        ## Not use PatchGAN
+        #out = F.adaptive_avg_pool2d(out, 1).view(out.shape[0], -1) # Global Average Pooling
         
         out = self.activation(x) # for use to WGAN-gp.
 
@@ -276,8 +276,8 @@ class Discriminator(nn.Module):
             return out, loss_recon
         else:
             out_128 = self.conv_patch(x_128)
-            # Not use PatchGAN
-            out_128 = F.adaptive_avg_pool2d(out_128, 1).view(out_128.shape[0], -1) # Global Average Pooling
+            ## Not use PatchGAN
+            #out_128 = F.adaptive_avg_pool2d(out_128, 1).view(out_128.shape[0], -1) # Global Average Pooling
             out_128 = self.activation(x_128) # for use to WGAN-gp.
             return out, out_128
 

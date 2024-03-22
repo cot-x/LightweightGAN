@@ -268,7 +268,6 @@ class Discriminator(nn.Module):
         #out = F.adaptive_avg_pool2d(out, 1).view(out.shape[0], -1) # Global Average Pooling
         
         out = self.activation(x) # for use to WGAN-gp.
-
         
         if is_real:
             real_crop_128x128 = Util.crop(real_256x256, 128, pos * 16)
@@ -408,7 +407,7 @@ class Solver:
         self.args = args
         self.feed_dim = num_fmap(0)
         self.max_depth = int(np.log2(self.args.image_size)) - 1
-        self.pseudo_aug = 0.0
+        #self.pseudo_aug = 0.0
         self.epoch = 0
         
         self.netG = Generator(self.max_depth, num_fmap).to(self.device)
@@ -460,7 +459,7 @@ class Solver:
         else:
             return Solver(args)
         
-    def trainGAN(self, epoch, iters, max_iters, real_img, a=0, b=1, c=1, lambda_ms=1):
+    def trainGAN_LSGAN(self, epoch, iters, max_iters, real_img, a=0, b=1, c=1, lambda_ms=1):
         ### Train with LSGAN.
         ### for example, (a, b, c) = 0, 1, 1 or (a, b, c) = -1, 1, 0
         
@@ -485,26 +484,26 @@ class Solver:
         #fake_128_aug = Util.augment_p(fake_128, self.pseudo_aug) # ADA
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
 
-        ## Not APA
-        #fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-        #fake_128_loss = torch.sum((fake_128_score - a) ** 2)
-        # APA
-        p = random.uniform(0, 1)
-        if 1 - self.pseudo_aug < p:
-            fake_src_loss = torch.sum((fake_src_score - b) ** 2) # Pseudo: fake is real.
-            fake_128_loss = torch.sum((fake_128_score - b) ** 2) # Pseudo: fake is real.
-        else:
-            fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-            fake_128_loss = torch.sum((fake_128_score - a) ** 2)
-
-        # Update Probability Augmentation.
-        lz = (torch.sign(torch.logit(real_src_score)).mean()
-              - torch.sign(torch.logit(fake_src_score)).mean()) / 2
-        if lz > self.args.aug_threshold:
-            self.pseudo_aug += self.args.aug_increment
-        else:
-            self.pseudo_aug -= self.args.aug_increment
-        self.pseudo_aug = min(1, max(0, self.pseudo_aug))
+        # Not APA
+        fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+        fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        ## APA
+        #p = random.uniform(0, 1)
+        #if 1 - self.pseudo_aug < p:
+        #    fake_src_loss = torch.sum((fake_src_score - b) ** 2) # Pseudo: fake is real.
+        #    fake_128_loss = torch.sum((fake_128_score - b) ** 2) # Pseudo: fake is real.
+        #else:
+        #    fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+        #    fake_128_loss = torch.sum((fake_128_score - a) ** 2)
+        #
+        ## Update Probability Augmentation.
+        #lz = (torch.sign(torch.logit(real_src_score)).mean()
+        #      - torch.sign(torch.logit(fake_src_score)).mean()) / 2
+        #if lz > self.args.aug_threshold:
+        #    self.pseudo_aug += self.args.aug_increment
+        #else:
+        #    self.pseudo_aug -= self.args.aug_increment
+        #self.pseudo_aug = min(1, max(0, self.pseudo_aug))
 
         ## bCR
         #bcr_real = mse_loss(self.netD(real_img, is_real=True)[0], real_src_score)
@@ -535,7 +534,7 @@ class Solver:
         loss['D/loss'] = d_loss.item()
         loss['D/fake_128_loss'] = fake_128_loss.item()
         loss['D/loss_recon'] = d_loss_recon.item()
-        loss['Augment/prob'] = self.pseudo_aug
+        #loss['Augment/prob'] = self.pseudo_aug
         #loss['D/bcr_loss'] = (bcr_real + bcr_fake).item()
         #loss['D/zcr_loss'] = zcr_loss.item()
         
@@ -604,26 +603,26 @@ class Solver:
         fake_img, fake_128 = self.netG(random_data)
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
 
-        ## Not APA
-        #fake_src_loss = torch.mean(fake_src_score)
-        #fake_128_loss = torch.mean(fake_128_score)
-        # APA
-        p = random.uniform(0, 1)
-        if 1 - self.pseudo_aug < p:
-            fake_src_loss = - torch.mean(fake_src_score) # Pseudo: fake is real.
-            fake_128_loss = - torch.mean(fake_128_score) # Pseudo: fake is real.
-        else:
-            fake_src_loss = torch.mean(fake_src_score)
-            fake_128_loss = torch.mean(fake_128_score)
-
-        # Update Probability Augmentation.
-        lz = (torch.sign(torch.logit(real_src_score)).mean()
-              - torch.sign(torch.logit(fake_src_score)).mean()) / 2
-        if lz > self.args.aug_threshold:
-            self.pseudo_aug += self.args.aug_increment
-        else:
-            self.pseudo_aug -= self.args.aug_increment
-        self.pseudo_aug = min(1, max(0, self.pseudo_aug))
+        # Not APA
+        fake_src_loss = torch.mean(fake_src_score)
+        fake_128_loss = torch.mean(fake_128_score)
+        ## APA
+        #p = random.uniform(0, 1)
+        #if 1 - self.pseudo_aug < p:
+        #    fake_src_loss = - torch.mean(fake_src_score) # Pseudo: fake is real.
+        #    fake_128_loss = - torch.mean(fake_128_score) # Pseudo: fake is real.
+        #else:
+        #    fake_src_loss = torch.mean(fake_src_score)
+        #    fake_128_loss = torch.mean(fake_128_score)
+        #
+        ## Update Probability Augmentation.
+        #lz = (torch.sign(torch.logit(real_src_score)).mean()
+        #      - torch.sign(torch.logit(fake_src_score)).mean()) / 2
+        #if lz > self.args.aug_threshold:
+        #    self.pseudo_aug += self.args.aug_increment
+        #else:
+        #    self.pseudo_aug -= self.args.aug_increment
+        #self.pseudo_aug = min(1, max(0, self.pseudo_aug))
         
         # Compute loss for gradient penalty
         alpha = torch.rand(real_img.size(0), 1, 1, 1).to(self.device)
@@ -657,7 +656,7 @@ class Solver:
         loss['D/fake_128_loss'] = fake_128_loss.item()
         loss['D/loss_recon'] = d_loss_recon.item()
         loss['D/loss_gp'] = gp_loss.item()
-        loss['Augment/prob'] = self.pseudo_aug
+        #loss['Augment/prob'] = self.pseudo_aug
         
         # ================================================================================ #
         #                               Train the generator                                #
@@ -712,8 +711,8 @@ class Solver:
         hyper_params['Batch Size'] = self.args.batch_size
         hyper_params['Num Train'] = self.args.num_train
         hyper_params['Lambda_WGAN-gp'] = self.args.lambda_gp
-        hyper_params['Probability Aug-Threshold'] = self.args.aug_threshold
-        hyper_params['Probability Aug-Increment'] = self.args.aug_increment
+        #hyper_params['Probability Aug-Threshold'] = self.args.aug_threshold
+        #hyper_params['Probability Aug-Increment'] = self.args.aug_increment
         #hyper_params['bCR lambda_real'] = args.lambda_bcr_real
         #hyper_params['bCR lambda_fake'] = args.lambda_bcr_fake
         #hyper_params['zCR lambda_gen'] = args.lambda_zcr_gen
@@ -733,7 +732,8 @@ class Solver:
                 iters += 1
                 
                 data = data.to(self.device)
-                
+
+                #loss = self.trainGAN_LSGAN(self.epoch, iters, self.max_iters, data)
                 loss = self.trainGAN_WGANgp(self.epoch, iters, self.max_iters, data)
                 
                 epoch_loss_D += loss['D/loss']
@@ -801,8 +801,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--num_train', type=int, default=100)
     parser.add_argument('--lambda_gp', type=float, default=10)
-    parser.add_argument('--aug_threshold', type=float, default=0.6)
-    parser.add_argument('--aug_increment', type=float, default=0.01)
+    #parser.add_argument('--aug_threshold', type=float, default=0.6)
+    #parser.add_argument('--aug_increment', type=float, default=0.01)
     #parser.add_argument('--lambda_bcr_real', type=float, default=10)
     #parser.add_argument('--lambda_bcr_fake', type=float, default=10)
     #parser.add_argument('--lambda_zcr_noise', type=float, default=0.07)

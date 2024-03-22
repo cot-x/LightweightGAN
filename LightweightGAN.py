@@ -484,10 +484,10 @@ class Solver:
         #fake_img_aug = Util.augment_p(fake_img, self.pseudo_aug) # ADA
         #fake_128_aug = Util.augment_p(fake_128, self.pseudo_aug) # ADA
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
-        
-        fake_src_loss = torch.sum((fake_src_score - a) ** 2)
-        fake_128_loss = torch.sum((fake_128_score - a) ** 2)
-        
+
+        ## Not APA
+        #fake_src_loss = torch.sum((fake_src_score - a) ** 2)
+        #fake_128_loss = torch.sum((fake_128_score - a) ** 2)
         # APA
         p = random.uniform(0, 1)
         if 1 - self.pseudo_aug < p:
@@ -506,19 +506,19 @@ class Solver:
             self.pseudo_aug -= self.args.aug_increment
         self.pseudo_aug = min(1, max(0, self.pseudo_aug))
 
-        # bCR
+        ## bCR
         #bcr_real = mse_loss(self.netD(real_img, is_real=True)[0], real_src_score)
         #fake_img_aug = Util.augment(fake_img)
         #fake_128_aug = Util.augment(fake_128)
         #fake_src_score_aug, fake_128_score_aug = self.netD((fake_img_aug, fake_128_aug))
         #bcr_fake = mse_loss(fake_src_score_aug, fake_src_score) + mse_loss(fake_128_score_aug, fake_128_score)
 
-        # zCR
+        ## zCR
         #z_img, z_128 = self.netG(z)
         #z_score, z_128_score = self.netD((z_img, z_128))
         #zcr_loss = mse_loss(fake_src_score, z_score) + mse_loss(fake_128_score, z_128_score)
 
-        # for Mode-Seeking
+        ## for Mode-Seeking
         #_fake_img = Variable(fake_img.data)
         #_random_data = Variable(random_data.data)
         
@@ -553,7 +553,7 @@ class Solver:
         fake_src_loss = torch.sum((fake_src_score - c) ** 2)
         fake_128_loss = torch.sum((fake_128_score - c) ** 2)
 
-        # zCR
+        ## zCR
         #z_img, z_128 = self.netG(z)
         #zcr_loss = - mse_loss(fake_img, z_img) - mse_loss(fake_128, z_128)
         
@@ -590,9 +590,6 @@ class Solver:
     def trainGAN_WGANgp(self, epoch, iters, max_iters, real_img, lambda_ms=1):
         ### Train with WGAN-gp.
         
-        mse_loss = nn.MSELoss()
-        BCE_loss = nn.BCEWithLogitsLoss(reduction='mean')
-        L1_loss = nn.L1Loss(reduction='mean')
         random_data = torch.randn(real_img.size(0), self.feed_dim, 2, 2).to(self.device)
         
         # ================================================================================ #
@@ -606,8 +603,10 @@ class Solver:
         # Compute loss with fake images.
         fake_img, fake_128 = self.netG(random_data)
         fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
-        
-        
+
+        ## Not APA
+        #fake_src_loss = torch.mean(fake_src_score)
+        #fake_128_loss = torch.mean(fake_128_score)
         # APA
         p = random.uniform(0, 1)
         if 1 - self.pseudo_aug < p:
@@ -642,7 +641,7 @@ class Solver:
         grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
         gp_loss = torch.mean((grad_l2norm - 1)**2)
         
-        # for Mode-Seeking
+        ## for Mode-Seeking
         #_fake_img = Variable(fake_img.data)
         #_random_data = Variable(random_data.data)
         

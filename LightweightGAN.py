@@ -237,6 +237,7 @@ class Discriminator(nn.Module):
         self.mse_loss = nn.MSELoss()
         
         self.conv_patch = nn.Conv2d(num_fmap(0), 1, kernel_size=3, stride=1, padding=1)
+        self.activation = nn.Sigmoid() # for use to WGAN-gp.
     
     def forward(self, x, is_real=False):
         if is_real:
@@ -263,12 +264,21 @@ class Discriminator(nn.Module):
         
         out = self.conv_patch(x)
         
+        # Not use PatchGAN
+        out = F.adaptive_avg_pool2d(out, 1).view(out.shape[0], -1) # Global Average Pooling
+        
+        out = self.activation(x) # for use to WGAN-gp.
+
+        
         if is_real:
             real_crop_128x128 = Util.crop(real_256x256, 128, pos * 16)
             loss_recon = self.mse_loss(real_128x128, fake_128x128) + self.mse_loss(real_crop_128x128, fake_crop_128x128)
             return out, loss_recon
         else:
             out_128 = self.conv_patch(x_128)
+            # Not use PatchGAN
+            out_128 = F.adaptive_avg_pool2d(out_128, 1).view(out_128.shape[0], -1) # Global Average Pooling
+            out_128 = self.activation(x_128) # for use to WGAN-gp.
             return out, out_128
 
 
@@ -441,13 +451,14 @@ class Solver:
         with open(os.path.join('.', f'resume.pkl'), 'wb') as f:
             dump(self, f)
     
+    @staticmethod
     def load_resume(self):
         if os.path.exists('resume.pkl'):
             with open(os.path.join('.', 'resume.pkl'), 'rb') as f:
                 print('Load resume.')
                 return load(f)
         else:
-            return self
+            return Solver(args)
         
     def trainGAN(self, epoch, iters, max_iters, real_img, a=0, b=1, c=1, lambda_ms=1):
         ### Train with LSGAN.
@@ -575,6 +586,118 @@ class Solver:
             #Util.showImage(fake_img)
         
         return loss
+        
+    def trainGAN_WGANgp(self, epoch, iters, max_iters, real_img, lambda_ms=1):
+        ### Train with WGAN-gp.
+        
+        mse_loss = nn.MSELoss()
+        BCE_loss = nn.BCEWithLogitsLoss(reduction='mean')
+        L1_loss = nn.L1Loss(reduction='mean')
+        random_data = torch.randn(real_img.size(0), self.feed_dim, 2, 2).to(self.device)
+        
+        # ================================================================================ #
+        #                             Train the discriminator                              #
+        # ================================================================================ #
+        
+        # Compute loss with real images.
+        real_src_score, d_loss_recon = self.netD(real_img, is_real=True)
+        real_src_loss = - torch.mean(real_src_score)
+        
+        # Compute loss with fake images.
+        fake_img, fake_128 = self.netG(random_data)
+        fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
+        
+        
+        # APA
+        p = random.uniform(0, 1)
+        if 1 - self.pseudo_aug < p:
+            fake_src_loss = - torch.mean(fake_src_score) # Pseudo: fake is real.
+            fake_128_loss = - torch.mean(fake_128_score) # Pseudo: fake is real.
+        else:
+            fake_src_loss = torch.mean(fake_src_score)
+            fake_128_loss = torch.mean(fake_128_score)
+
+        # Update Probability Augmentation.
+        lz = (torch.sign(torch.logit(real_src_score)).mean()
+              - torch.sign(torch.logit(fake_src_score)).mean()) / 2
+        if lz > self.args.aug_threshold:
+            self.pseudo_aug += self.args.aug_increment
+        else:
+            self.pseudo_aug -= self.args.aug_increment
+        self.pseudo_aug = min(1, max(0, self.pseudo_aug))
+        
+        # Compute loss for gradient penalty
+        alpha = torch.rand(real_img.size(0), 1, 1, 1).to(self.device)
+        x_hat = (alpha * real_img.data + (1 - alpha) * fake_img.data).requires_grad_(True)
+        x_hat_score, _ = self.netD(x_hat, is_real=True)
+        
+        grad = torch.autograd.grad(outputs=x_hat_score,
+                                   inputs=x_hat,
+                                   grad_outputs=torch.ones(x_hat_score.size()).to(self.device),
+                                   retain_graph=True,
+                                   create_graph=True,
+                                   only_inputs=True)[0]
+        
+        grad = grad.view(grad.size()[0], -1)
+        grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
+        gp_loss = torch.mean((grad_l2norm - 1)**2)
+        
+        # for Mode-Seeking
+        #_fake_img = Variable(fake_img.data)
+        #_random_data = Variable(random_data.data)
+        
+        # Backward and optimize.
+        d_loss = real_src_loss + fake_src_loss + fake_128_loss + d_loss_recon + self.args.lambda_gp * gp_loss
+        self.optimizer_D.zero_grad()
+        d_loss.backward()
+        self.optimizer_D.step()
+        
+        # Logging.
+        loss = {}
+        loss['D/loss'] = d_loss.item()
+        loss['D/fake_128_loss'] = fake_128_loss.item()
+        loss['D/loss_recon'] = d_loss_recon.item()
+        loss['D/loss_gp'] = gp_loss.item()
+        loss['Augment/prob'] = self.pseudo_aug
+        
+        # ================================================================================ #
+        #                               Train the generator                                #
+        # ================================================================================ #
+        
+        random_data = torch.randn(real_img.size(0), self.feed_dim, 2, 2).to(self.device)
+        
+        # Compute loss with fake images.
+        fake_img, fake_128 = self.netG(random_data)
+        fake_src_score, fake_128_score = self.netD((fake_img, fake_128))
+        fake_src_loss = - torch.mean(fake_src_score)
+        fake_128_loss = - torch.mean(fake_128_score)
+        
+        ## Mode Seeking Loss
+        #lz = torch.mean(torch.abs(fake_img - _fake_img)) / torch.mean(torch.abs(random_data - _random_data))
+        #eps = 1 * 1e-5
+        #ms_loss = 1 / (lz + eps) * lambda_ms
+        
+        # Backward and optimize.
+        g_loss = (fake_src_loss + fake_128_loss
+                  #+ ms_loss
+                 )
+        self.optimizer_G.zero_grad()
+        g_loss.backward()
+        self.optimizer_G.step()
+
+        # Logging.
+        loss['G/loss'] = g_loss.item()
+        loss['G/fake_128_loss'] = fake_128_loss.item()
+        
+        # Save
+        if iters == max_iters:
+            self.save_state(epoch)
+            img_name = str(epoch) + '_' + str(iters) + '.png'
+            img_path = os.path.join(self.args.result_dir, img_name)
+            save_image(fake_img, img_path)
+            #Util.showImage(fake_img)
+        
+        return loss
     
     def train(self, resume=True):
         self.netG.train()
@@ -589,6 +712,7 @@ class Solver:
         hyper_params["Mul Discriminator's LR"] = self.args.mul_lr_dis
         hyper_params['Batch Size'] = self.args.batch_size
         hyper_params['Num Train'] = self.args.num_train
+        hyper_params['Lambda_WGAN-gp'] = self.args.lambda_gp
         hyper_params['Probability Aug-Threshold'] = self.args.aug_threshold
         hyper_params['Probability Aug-Increment'] = self.args.aug_increment
         #hyper_params['bCR lambda_real'] = args.lambda_bcr_real
@@ -611,7 +735,7 @@ class Solver:
                 
                 data = data.to(self.device)
                 
-                loss = self.trainGAN(self.epoch, iters, self.max_iters, data)
+                loss = self.trainGAN_WGANgp(self.epoch, iters, self.max_iters, data)
                 
                 epoch_loss_D += loss['D/loss']
                 epoch_loss_G += loss['G/loss']
@@ -647,12 +771,13 @@ class Solver:
 
 
 def main(args):
-    solver = Solver(args)
-    solver.load_state()
-    
-    if not args.noresume:
-        solver = solver.load_resume()
+    if args.noresume:
+        solver = Solver(args)
+    else:
+        solver = Solver.load_resume(args)
         solver.args = args
+    
+    solver.load_state()
     
     if args.generate > 0:
         solver.generate(args.generate)
@@ -676,6 +801,7 @@ if __name__ == '__main__':
     parser.add_argument('--mul_lr_dis', type=float, default=4)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--num_train', type=int, default=100)
+    parser.add_argument('--lambda_gp', type=float, default=10)
     parser.add_argument('--aug_threshold', type=float, default=0.6)
     parser.add_argument('--aug_increment', type=float, default=0.01)
     #parser.add_argument('--lambda_bcr_real', type=float, default=10)

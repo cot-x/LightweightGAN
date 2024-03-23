@@ -41,6 +41,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class Mish(nn.Module):
     @staticmethod
+    @torch.jit.script
     def mish(x):
         return x * torch.tanh(F.softplus(x))
     
@@ -52,22 +53,29 @@ class Mish(nn.Module):
 
 
 class GLU(nn.Module):
-    def forward(self, x):
+    @staticmethod
+    @torch.jit.script
+    def glu(x):
         channel = x.size(1)
         assert channel % 2 == 0, 'must divide by 2.'
         return x[:, :channel//2] * torch.sigmoid(x[:, channel//2:])
+        
+    def forward(self, x):
+        return GLU.glu(x)
 
 
 # In[ ]:
 
 
 class PixelwiseNormalization(nn.Module):
-    def pixel_norm(self, x):
+    @staticmethod
+    @torch.jit.script
+    def pixel_norm(x):
         eps = 1e-8
         return x * torch.rsqrt(torch.mean(x * x, 1, keepdim=True) + eps)
     
     def forward(self, x):
-        return self.pixel_norm(x)
+        return PixelwiseNormalization.pixel_norm(x)
 
 
 # In[ ]:
@@ -291,7 +299,7 @@ class RandomErasing:
         self.erase_high = erase_high
         self.aspect_rl = aspect_rl
         self.aspect_rh = aspect_rh
-
+    
     def __call__(self, image):
         if np.random.rand() <= self.p:
             c, h, w = image.shape
@@ -326,7 +334,7 @@ class Util:
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor()
         ]))
-        return DataLoader(imgs, batch_size=batch_size, shuffle=True, drop_last=True)
+        return DataLoader(imgs, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=os.cpu_count(), pin_memory=True)
     
     @staticmethod
     def augment(images):
@@ -731,7 +739,7 @@ class Solver:
             for iters, (data, _) in enumerate(tqdm(self.dataloader)):
                 iters += 1
                 
-                data = data.to(self.device)
+                data = data.to(self.device, non_blocking=True)
 
                 #loss = self.trainGAN_LSGAN(self.epoch, iters, self.max_iters, data)
                 loss = self.trainGAN_WGANgp(self.epoch, iters, self.max_iters, data)

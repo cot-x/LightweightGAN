@@ -402,10 +402,8 @@ class Util:
 
 class Solver:
     def __init__(self, args):
-        use_cuda = torch.cuda.is_available() if not args.cpu else False
-        self.device = torch.device("cuda" if use_cuda else "cpu")
-        torch.backends.cudnn.benchmark = True
-        print(f'Use Device: {self.device}')
+        has_cuda = torch.cuda.is_available() if not args.cpu else False
+        self.device = torch.device("cuda" if has_cuda else "cpu")
         
         def num_fmap(stage):
             base_size = self.args.image_size
@@ -465,11 +463,13 @@ class Solver:
             dump(self, f)
     
     @staticmethod
-    def load_resume(self):
-        if os.path.exists('resume.pkl'):
+    def load(args, resume=False):
+        if resume and os.path.exists('resume.pkl'):
             with open(os.path.join('.', 'resume.pkl'), 'rb') as f:
                 print('Load resume.')
-                return load(f)
+                solver = load(f)
+                solver.args = args
+                return solver
         else:
             return Solver(args)
         
@@ -721,6 +721,9 @@ class Solver:
         return loss
     
     def train(self, resume=False):
+        print(f'Use Device: {self.device}')
+        torch.backends.cudnn.benchmark = True
+        
         self.netG.train()
         self.netD.train()
         
@@ -793,12 +796,7 @@ class Solver:
 
 
 def main(args):
-    if not args.resume:
-        solver = Solver(args)
-    else:
-        solver = Solver.load_resume(args)
-        solver.args = args
-    
+    solver = Solver.load(args, resume=args.resume)
     solver.load_state()
     
     if args.generate > 0:

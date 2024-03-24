@@ -21,6 +21,7 @@ options:
   --generate GENERATE
   --noresume
 ```
+
 ### for example
 ```
 python LightweightGAN.py --image_dir "/usr/share/datasets/image_dir"
@@ -29,4 +30,9 @@ and
 ```
 python LightweightGAN.py --generate 10
 ```
+
+**Note:**
+- resume.pkl is a file that saves learning checkpoints for resume and includes models, weight data, etc.
+- If a weight.pth file exists in the current directory, the network weights will be automatically read.
+
 **Default use only WGAN-gp. Other methods(LSGAN,APA,ADA,ICR) is comment-out.**

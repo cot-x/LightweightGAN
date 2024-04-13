@@ -333,7 +333,6 @@ class Util:
         imgs = ImageFolder(folder_path, transform=transforms.Compose([
             transforms.Resize(int(size)),
             transforms.RandomCrop(size),
-            transforms.RandomHorizontalFlip(),
             transforms.ToTensor()
         ]))
         return DataLoader(imgs, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=os.cpu_count(), pin_memory=True)
@@ -342,6 +341,7 @@ class Util:
     def augment(images):
         transform = transforms.Compose([
             transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(brightness=0, contrast=0.5, saturation=0.5),
             transforms.RandomRotation(degrees=30),
             transforms.ToTensor(),
@@ -356,6 +356,7 @@ class Util:
         size = images.size(-1)
         images = [img for img in images.cpu()]
         images = [transforms.ToPILImage()(img) for img in images]
+        images = [transforms.RandomHorizontalFlip()(img) for img in images]
         if random.uniform(0, 1) <= p:
             images = [transforms.ColorJitter(brightness=0, contrast=0.5, saturation=0.5)(img) for img in images]
         if random.uniform(0, 1) <= p:

@@ -461,9 +461,8 @@ class Solver:
     def load(args, resume=True):
         if resume and os.path.exists('resume.pkl'):
             with open(os.path.join('.', 'resume.pkl'), 'rb') as f:
-                print('Load resume.')
                 solver = load(f)
-                solver.args = args
+                print('Loaded resume.')
                 return solver
         else:
             return Solver(args)
